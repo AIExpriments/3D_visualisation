@@ -1,0 +1,127 @@
+Here is the complete guide explaining the exact problem you faced, why it happened, and how to fix it permanently using both Python code and the 3D Slicer graphical user interface (GUI).
+
+🔍 THE EXACT PROBLEM EXPLAINED
+
+When you stack 2D radiographic images of a radome and activate 3D volume rendering, the object appears trapped inside the corner of the 3D space instead of sitting in the center. Consequently, when you attempt to orbit or rotate the view using your mouse, the radome swings wildly like a pendulum and disappears from the screen rather than spinning cleanly in place.
+
+WHY DID THIS HAPPEN?
+
+By default, 3D Slicer does not know the physical center of a raw image stack. It automatically assigns the mathematical origin coordinate (0, 0, 0) to the bottom-front-left pixel of your very first image slice.
+
+Because the pivot point of the 3D camera is locked at (0, 0, 0), it spins around the empty corner of the volume grid rather than the actual physical center of your radome.
+
+🛠️ SOLUTION 1: FIX IT PROGRAMMATICALLY (PYTHON CODE)
+
+If you are uploading your images via a script, add this code immediately after loading your volume. It automatically calculates the physical center of the radome and shifts its coordinate origin to (0,0,0), locking the camera pivot perfectly.
+
+------------------------------------------------------------
+PYTHON CODE
+------------------------------------------------------------
+
+import os
+import glob
+import numpy as np
+import slicer
+from vtk import vtkStringArray
+
+# =========================================================================
+# 1. DEFINE PATHS (Change this to your actual folder path)
+# =========================================================================
+
+tiff_folder = "C:/path/to/your/radome_tiff_slices/"
+volume_name = "Radome_3D_Volume"
+
+# Find and sort all TIFF image files alphabetically
+search_path = os.path.join(tiff_folder, "*.tif*")
+tiff_files = sorted(glob.glob(search_path))
+
+if not tiff_files:
+    raise FileNotFoundError(
+        f"No TIFF images found in the specified directory: {tiff_folder}"
+    )
+
+# =========================================================================
+# 2. LOAD & STACK IMAGES
+# =========================================================================
+
+file_list = vtkStringArray()
+
+for f in tiff_files:
+    file_list.InsertNextValue(f)
+
+# Load the stack into Slicer as a single 3D volume node
+volumeNode = slicer.modules.volumes.logic().AddArchetypeVolume(
+    tiff_files,
+    volume_name,
+    0,
+    file_list
+)
+
+# =========================================================================
+# 3. THE PERMANENT FIX: RE-CENTER SYSTEM ORIGIN
+# =========================================================================
+
+# Get the physical boundary coordinates of the loaded volume
+bounds = [0.0] * 6
+volumeNode.GetBounds(bounds)
+
+# Calculate the exact center point of the 3D volume geometry
+centerX = (bounds[0] + bounds[1]) / 2.0
+centerY = (bounds[2] + bounds[3]) / 2.0
+centerZ = (bounds[4] + bounds[5]) / 2.0
+
+# Shift the object's origin so its physical center sits perfectly at (0,0,0)
+volumeNode.SetOrigin(-centerX, -centerY, -centerZ)
+
+# =========================================================================
+# 4. INITIALIZE 3D VOLUME RENDERING & RESET CAMERA
+# =========================================================================
+
+# Activate the 3D rendering pipeline
+volRenLogic = slicer.modules.volumerendering.logic()
+
+displayNode = volRenLogic.CreateDefaultVolumeRenderingNodes(volumeNode)
+displayNode.SetVisibility(True)
+
+volumeNode.GetDisplayNode().SetVisibility(True)
+
+# Tell the 3D camera to snap directly to the new centered object
+slicer.util.resetSliceViews()
+
+threeDWidget = slicer.app.layoutManager().threeDWidget(0)
+threeDWidget.threeDView().resetCamera()
+
+print("Success: 3D Model centered! You can now spin it smoothly without clipping.")
+
+------------------------------------------------------------
+SOLUTION 2: FIX IT MANUALLY (3D SLICER GUI STEPS)
+------------------------------------------------------------
+
+If you are already looking at a model that is swinging out of view, you can correct the camera pivot instantly inside the interface using any of these methods.
+
+METHOD A: THE RIGHT-CLICK REFOCUS (EASIEST)
+
+1. Move your mouse cursor into the black 3D View window.
+2. Place the cursor directly over any visible part of your Radome.
+3. Right-click and select "Refocus camera on this point".
+4. The camera will instantly lock onto that structural spot, allowing you to orbit perfectly.
+
+METHOD B: THE KEYBOARD SHORTCUT
+
+1. Left-click anywhere inside the black 3D view window to activate it.
+2. Press the R key on your keyboard.
+3. This triggers the "Reset Field of View" command, which evaluates the entire model boundaries and centers the camera target automatically.
+
+METHOD C: THE HIDDEN TOOLBAR BUTTON
+
+1. Hover your mouse over the blue header strip at the top of the 3D View window.
+2. Click the small Pushpin icon (📌) that appears to pin the view menu open.
+3. Click the "Reset Field of View" button (it looks like a small square target box or crosshair 🎯 icon on the far left of that local toolbar). This centers the view frame around the core 3D bounding asset.
+
+------------------------------------------------------------
+OPTIONAL NEXT STEPS
+------------------------------------------------------------
+
+The script can be expanded to automatically export the final centered 3D model as an STL or OBJ file for CAD software.
+
+It can also be extended with opacity/threshold filtering to clean up background noise.
